@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full bg-slate-950">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>AI Vision Scanner - Quét Thực Tế AI</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts - Inter -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          },
+          animation: {
+            'laser': 'laserScan 2.5s infinite linear',
+            'pulse-fast': 'pulse 1s infinite cubic-bezier(0.4, 0, 0.6, 1)',
+          },
+          keyframes: {
+            laserScan: {
+              '0%': { top: '0%', opacity: '0.8' },
+              '50%': { opacity: '1' },
+              '100%': { top: '100%', opacity: '0.8' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Continuous custom style adjustments */
+    body {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    
+    .glass-pill {
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    /* Custom laser line shadow */
+    .laser-line {
+      box-shadow: 0 0 15px #6366f1, 0 0 30px #818cf8;
+    }
+
+    /* Hide scrollbar for tab navigation */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="h-full w-full overflow-hidden text-white font-sans select-none flex flex-col justify-between">
+
+  <!-- Top Navigation & Controls Overlay -->
+  <header class="fixed top-0 left-0 right-0 z-30 p-4 pt-safe flex items-center justify-between pointer-events-none">
+    <!-- App Brand / Mode Badge -->
+    <div class="pointer-events-auto flex items-center gap-2">
+      <div class="glass-pill px-3 py-1.5 rounded-full flex items-center gap-2 text-xs font-semibold tracking-wide">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span id="statusIndicator">SẴN SÀNG</span>
+      </div>
+    </div>
+
+    <!-- Right Utility Buttons -->
+    <div class="pointer-events-auto flex items-center gap-2">
+      <!-- Flashlight Toggle -->
+      <button id="torchBtn" class="glass-pill w-10 h-10 rounded-full flex items-center justify-center text-slate-200 active:scale-95 transition" title="Bật/Tắt Đèn Flash">
+        <i class="fa-solid fa-bolt text-sm"></i>
+      </button>
+
+      <!-- Camera Switch -->
+      <button id="switchCameraBtn" class="glass-pill w-10 h-10 rounded-full flex items-center justify-center text-slate-200 active:scale-95 transition" title="Đổi Camera">
+        <i class="fa-solid fa-camera-rotate text-sm"></i>
+      </button>
+
+      <!-- Settings / API Key Modal Button -->
+      <button id="settingsBtn" class="glass-pill w-10 h-10 rounded-full flex items-center justify-center text-slate-200 active:scale-95 transition" title="Cài đặt API">
+        <i class="fa-solid fa-gear text-sm"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Fullscreen Camera View & Scanning Reticle -->
+  <main class="relative w-full h-full flex-1 bg-black overflow-hidden flex items-center justify-center">
+    <!-- Hidden Canvas for Frame Capture -->
+    <canvas id="captureCanvas" class="hidden"></canvas>
+
+    <!-- Video Element -->
+    <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+
+    <!-- Fallback / Loading Overlay -->
+    <div id="cameraPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 p-6 text-center z-10">
+      <i class="fa-solid fa-camera text-5xl text-slate-600 mb-4 animate-bounce"></i>
+      <h2 class="text-xl font-bold mb-2 text-slate-200">Đang khởi động Camera...</h2>
+      <p class="text-sm text-slate-400 max-w-xs mb-6">Vui lòng cho phép quyền truy cập camera để bắt đầu quét đối tượng thời gian thực.</p>
+      <button id="retryCameraBtn" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 rounded-xl font-semibold text-sm transition shadow-lg">
+        Thử Lại Camera
+      </button>
+    </div>
+
+    <!-- Scanner Target Frame / Laser Overlay -->
+    <div id="viewfinder" class="absolute inset-0 pointer-events-none flex items-center justify-center p-8 z-10">
+      <div class="relative w-full max-w-sm aspect-square border-2 border-indigo-500/40 rounded-3xl overflow-hidden transition-all duration-300">
+        
+        <!-- Corner Reticles -->
+        <div class="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-indigo-500 rounded-tl-2xl"></div>
+        <div class="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-indigo-500 rounded-tr-2xl"></div>
+        <div class="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-indigo-500 rounded-bl-2xl"></div>
+        <div class="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-indigo-500 rounded-br-2xl"></div>
+
+        <!-- Laser Line Animation -->
+        <div id="laserScanLine" class="absolute left-0 right-0 h-0.5 bg-indigo-400 laser-line animate-laser"></div>
+
+        <!-- AI Processing Spinner Overlay -->
+        <div id="aiProcessingOverlay" class="absolute inset-0 bg-slate-950/60 backdrop-blur-xs flex flex-col items-center justify-center gap-3 opacity-0 pointer-events-none transition-opacity duration-300">
+          <div class="relative flex items-center justify-center">
+            <div class="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+            <i class="fa-solid fa-brain text-indigo-400 absolute text-sm"></i>
+          </div>
+          <span class="text-xs font-medium text-indigo-200 tracking-wider uppercase">Gemini AI Đang Phân Tích...</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Control Panel -->
+  <div class="fixed bottom-0 left-0 right-0 z-30 pb-safe p-4 flex flex-col gap-3 pointer-events-none">
+    
+    <!-- Scanning Mode Toggle Pill -->
+    <div class="pointer-events-auto self-center glass-pill p-1 rounded-full flex items-center text-xs font-semibold">
+      <button id="modeManualBtn" class="px-4 py-1.5 rounded-full bg-brand-600 text-white transition-all shadow">
+        <i class="fa-solid fa-hand-pointer mr-1.5"></i>Thủ công
+      </button>
+      <button id="modeAutoBtn" class="px-4 py-1.5 rounded-full text-slate-300 hover:text-white transition-all">
+        <i class="fa-solid fa-rotate mr-1.5"></i>Tự động (3s)
+      </button>
+    </div>
+
+    <!-- Main Action Capture Bar -->
+    <div class="pointer-events-auto flex items-center justify-between px-6">
+      <!-- History Button -->
+      <button id="historyModalBtn" class="glass-pill w-12 h-12 rounded-full flex items-center justify-center text-slate-200 active:scale-95 transition relative">
+        <i class="fa-solid fa-clock-rotate-left"></i>
+        <span id="historyBadge" class="hidden absolute -top-1 -right-1 bg-indigo-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">0</span>
+      </button>
+
+      <!-- Center Big Shutter Button -->
+      <button id="scanTriggerBtn" class="w-20 h-20 rounded-full bg-white/20 p-1 flex items-center justify-center active:scale-95 transition shadow-2xl backdrop-blur-md">
+        <div class="w-full h-full rounded-full bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center text-white shadow-lg">
+          <i class="fa-solid fa-expand text-2xl"></i>
+        </div>
+      </button>
+
+      <!-- Quick Tips Button -->
+      <button id="tipsBtn" class="glass-pill w-12 h-12 rounded-full flex items-center justify-center text-slate-200 active:scale-95 transition">
+        <i class="fa-regular fa-lightbulb"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- AI Recognition Results Bottom Sheet Modal -->
+  <div id="resultBottomSheet" class="fixed inset-x-0 bottom-0 z-40 transform translate-y-full transition-transform duration-300 ease-out pointer-events-auto max-h-[80vh] flex flex-col">
+    <div class="glass-card rounded-t-3xl p-6 pt-3 flex flex-col gap-4 shadow-2xl overflow-y-auto max-h-[80vh]">
+      
+      <!-- Drag Handle Bar -->
+      <div class="w-12 h-1.5 bg-white/20 rounded-full self-center mb-1"></div>
+
+      <!-- Result Header Section -->
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span id="resCategory" class="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold uppercase tracking-wider">Danh mục</span>
+            <span id="resConfidence" class="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-semibold">95% Nhận diện</span>
+          </div>
+          <h2 id="resTitle" class="text-2xl font-bold text-white tracking-tight">Tên Vật Thể</h2>
+        </div>
+        
+        <button id="closeResultBtn" class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-slate-300 hover:bg-white/20 transition">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+
+      <!-- Description Body -->
+      <div class="space-y-3 border-t border-white/10 pt-3">
+        <p id="resDescription" class="text-sm text-slate-300 leading-relaxed">
+          Mô tả chi tiết về đối tượng nhận diện sẽ xuất hiện ở đây.
+        </p>
+
+        <!-- Dynamic Insights / Key details -->
+        <div id="resDetailsBox" class="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-2">
+          <h4 class="text-xs font-semibold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-solid fa-sparkles"></i> Chi tiết nổi bật
+          </h4>
+          <ul id="resDetailsList" class="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+            <li>Thông tin bổ sung 1</li>
+            <li>Thông tin bổ sung 2</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-3 pt-2">
+        <button id="speakResultBtn" class="flex-1 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition">
+          <i class="fa-solid fa-volume-high text-indigo-400"></i> Đọc Kết Quả
+        </button>
+        <button id="searchWebBtn" class="flex-1 py-3 bg-brand-600 hover:bg-brand-500 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition shadow-lg">
+          <i class="fa-solid fa-magnifying-glass"></i> Tìm Google
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (API Key Configuration) -->
+  <div id="settingsModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="glass-card w-full max-w-md rounded-3xl p-6 space-y-5 border border-white/10 shadow-2xl">
+      
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-indigo-400"></i> Cấu hình Gemini AI
+        </h3>
+        <button id="closeSettingsBtn" class="text-slate-400 hover:text-white">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <label for="apiKeyInput" class="block text-xs font-medium text-slate-300">Gemini API Key</label>
+        <div class="relative">
+          <input type="password" id="apiKeyInput" placeholder="Nhập API Key của bạn (Để trống nếu dùng mặc định)..." 
+                 class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition">
+          <button id="toggleShowKey" class="absolute right-3 top-3.5 text-slate-400 hover:text-slate-200">
+            <i class="fa-regular fa-eye"></i>
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-tight">
+          Ứng dụng sử dụng mô hình AI <strong>Gemini 3 Flash</strong> mới nhất. Bạn có thể tự điền API Key cá nhân từ <a href="https://aistudio.google.com/" target="_blank" class="text-indigo-400 underline">Google AI Studio</a>.
+        </p>
+      </div>
+
+      <!-- Auto Scan Interval Config -->
+      <div class="space-y-2">
+        <label class="block text-xs font-medium text-slate-300">Tần suất quét tự động</label>
+        <select id="autoScanInterval" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+          <option value="2000">Mỗi 2 giây</option>
+          <option value="3000" selected>Mỗi 3 giây (Khuyên dùng)</option>
+          <option value="5000">Mỗi 5 giây</option>
+        </select>
+      </div>
+
+      <div class="pt-2 flex justify-end gap-3">
+        <button id="saveSettingsBtn" class="w-full py-3 bg-brand-600 hover:bg-brand-500 font-semibold rounded-xl text-sm transition shadow-lg">
+          Lưu Cấu Hình
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Modal -->
+  <div id="historyModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="glass-card w-full max-w-md rounded-3xl p-6 flex flex-col h-[75vh] border border-white/10 shadow-2xl">
+      
+      <div class="flex items-center justify-between pb-4 border-b border-white/10">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i> Lịch Sử Quét
+        </h3>
+        <div class="flex items-center gap-3">
+          <button id="clearHistoryBtn" class="text-xs text-rose-400 hover:underline">Xóa tất cả</button>
+          <button id="closeHistoryBtn" class="text-slate-400 hover:text-white">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- History List Scroll Container -->
+      <div id="historyListContainer" class="flex-1 overflow-y-auto py-4 space-y-3 no-scrollbar">
+        <!-- Dynamic History Items inserted here -->
+        <div class="text-center py-12 text-slate-500 text-sm">Chưa có lịch sử quét nào.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* Continuous application logic definition */
+    document.addEventListener('DOMContentLoaded', () => {
+      
+      // DOM Elements
+      const video = document.getElementById('cameraVideo');
+      const canvas = document.getElementById('captureCanvas');
+      const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+      const retryCameraBtn = document.getElementById('retryCameraBtn');
+      const torchBtn = document.getElementById('torchBtn');
+      const switchCameraBtn = document.getElementById('switchCameraBtn');
+      const scanTriggerBtn = document.getElementById('scanTriggerBtn');
+      const modeManualBtn = document.getElementById('modeManualBtn');
+      const modeAutoBtn = document.getElementById('modeAutoBtn');
+      const statusIndicator = document.getElementById('statusIndicator');
+      const laserScanLine = document.getElementById('laserScanLine');
+      const aiProcessingOverlay = document.getElementById('aiProcessingOverlay');
+      
+      // Modal & Sheets
+      const resultBottomSheet = document.getElementById('resultBottomSheet');
+      const closeResultBtn = document.getElementById('closeResultBtn');
+      const resTitle = document.getElementById('resTitle');
+      const resCategory = document.getElementById('resCategory');
+      const resConfidence = document.getElementById('resConfidence');
+      const resDescription = document.getElementById('resDescription');
+      const resDetailsList = document.getElementById('resDetailsList');
+      const speakResultBtn = document.getElementById('speakResultBtn');
+      const searchWebBtn = document.getElementById('searchWebBtn');
+
+      // Settings DOM
+      const settingsBtn = document.getElementById('settingsBtn');
+      const settingsModal = document.getElementById('settingsModal');
+      const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+      const apiKeyInput = document.getElementById('apiKeyInput');
+      const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+      const toggleShowKey = document.getElementById('toggleShowKey');
+      const autoScanIntervalSelect = document.getElementById('autoScanInterval');
+
+      // History DOM
+      const historyModalBtn = document.getElementById('historyModalBtn');
+      const historyModal = document.getElementById('historyModal');
+      const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+      const historyListContainer = document.getElementById('historyListContainer');
+      const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+      const historyBadge = document.getElementById('historyBadge');
+
+      // State Management Variables
+      let mediaStream = null;
+      let currentFacingMode = 'environment'; // Default to rear camera
+      let isTorchOn = false;
+      let isAutoMode = false;
+      let autoScanTimer = null;
+      let isAnalyzing = false;
+      let scanHistory = JSON.parse(localStorage.getItem('vision_scan_history') || '[]');
+      let userApiKey = localStorage.getItem('gemini_api_key') || '';
+      let autoIntervalMs = parseInt(localStorage.getItem('auto_scan_interval') || '3000');
+
+      // Default System Prompt for Object Identification
+      const SYSTEM_PROMPT = `
+Bạn là một AI Computer Vision chuyên nghiệp nhận diện mọi thứ xung quanh thời gian thực qua camera.
+Hãy phân tích hình ảnh và trả về câu trả lời ở định dạng JSON chuẩn (không kèm markdown) với các trường sau:
+{
+  "title": "Tên đối tượng/vật thể/cảnh vật chính bằng Tiếng Việt",
+  "category": "Phân loại ngắn (ví dụ: Thiết bị điện tử, Thực vật, Động vật, Thực phẩm, Đồ dùng, Kiến trúc...)",
+  "confidence": 95, // Con số ước tính độ tin cậy từ 50 - 99
+  "description": "Mô tả ngắn gọn từ 2-3 câu về vật thể này, tính năng hoặc trạng thái của nó.",
+  "details": [
+    "Chi tiết hoặc thông số/đặc điểm 1",
+    "Chi tiết hoặc mẹo sử dụng/thông tin bổ sung 2",
+    "Chi tiết 3"
+  ]
+}
+Chỉ trả về JSON thuần túy, không có văn bản giải thích nào khác ngoài chuỗi JSON.
+`;
+
+      // Initialize App
+      initCamera();
+      updateHistoryBadge();
+      if (userApiKey) apiKeyInput.value = userApiKey;
+      autoScanIntervalSelect.value = autoIntervalMs.toString();
+
+      async function initCamera() {
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop());
+        }
+
+        statusIndicator.textContent = "ĐANG TẢI CAMERA...";
+        cameraPlaceholder.classList.remove('hidden');
+
+        const constraints = {
+          video: {
+            facingMode: { exact: currentFacingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        };
+
+        // Fallback constraint if exact facingMode fails
+        const fallbackConstraints = {
+          video: { facingMode: currentFacingMode },
+          audio: false
+        };
+
+        try {
+          try {
+            mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+          } catch (e) {
+            mediaStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+          }
+
+          video.srcObject = mediaStream;
+          await video.play();
+
+          cameraPlaceholder.classList.add('hidden');
+          statusIndicator.textContent = "SẴN SÀNG QUÉT";
+          isTorchOn = false;
+          updateTorchIcon();
+
+        } catch (err) {
+          console.error("Lỗi Camera:", err);
+          cameraPlaceholder.classList.remove('hidden');
+          statusIndicator.textContent = "LỖI CAMERA";
+          showNotification("Không thể mở Camera. Vui lòng cấp quyền truy cập camera!");
+        }
+      }
+
+      // Torch / Flashlight Control
+      async function toggleTorch() {
+        if (!mediaStream) return;
+        const track = mediaStream.getVideoTracks()[0];
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+        if (!capabilities.torch) {
+          showNotification("Thiết bị hoặc trình duyệt không hỗ trợ Đèn Flash!");
+          return;
+        }
+
+        try {
+          isTorchOn = !isTorchOn;
+          await track.applyConstraints({
+            advanced: [{ torch: isTorchOn }]
+          });
+          updateTorchIcon();
+        } catch (err) {
+          console.error("Lỗi Flashlight:", err);
+        }
+      }
+
+      function updateTorchIcon() {
+        if (isTorchOn) {
+          torchBtn.classList.add('bg-yellow-500', 'text-slate-950');
+          torchBtn.classList.remove('glass-pill', 'text-slate-200');
+        } else {
+          torchBtn.classList.remove('bg-yellow-500', 'text-slate-950');
+          torchBtn.classList.add('glass-pill', 'text-slate-200');
+        }
+      }
+
+      // Camera Switch (Front / Back)
+      switchCameraBtn.addEventListener('click', () => {
+        currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+        initCamera();
+      });
+
+      torchBtn.addEventListener('click', toggleTorch);
+      retryCameraBtn.addEventListener('click', initCamera);
+
+      function captureVideoFrame() {
+        if (!video.videoWidth) return null;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Convert canvas image to JPEG Base64
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        return dataUrl.split(',')[1]; // Strip header data:image/jpeg;base64,
+      }
+
+      async function analyzeFrame() {
+        if (isAnalyzing) return;
+        
+        const base64Image = captureVideoFrame();
+        if (!base64Image) return;
+
+        isAnalyzing = true;
+        setScanUIState(true);
+
+        const apiKey = userApiKey || "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+        const payload = {
+          contents: [{
+            parts: [
+              { text: SYSTEM_PROMPT },
+              {
+                inlineData: {
+                  mimeType: "image/jpeg",
+                  data: base64Image
+                }
+              }
+            ]
+          }]
+        };
+
+        try {
+          const response = await fetchWithRetry(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const result = await response.json();
+          const candidate = result.candidates?.[0];
+
+          if (candidate && candidate.content?.parts?.[0]?.text) {
+            let rawText = candidate.content.parts[0].text.trim();
+            
+            // Clean JSON codeblock quotes if present
+            if (rawText.startsWith('```json')) {
+              rawText = rawText.replace(/^```json/, '').replace(/```$/, '').trim();
+            } else if (rawText.startsWith('```')) {
+              rawText = rawText.replace(/^```/, '').replace(/```$/, '').trim();
+            }
+
+            try {
+              const parsedResult = JSON.parse(rawText);
+              displayResult(parsedResult, base64Image);
+            } catch (pErr) {
+              console.error("Lỗi parse JSON kết quả:", pErr, rawText);
+              displayFallbackResult("Đã nhận diện đối tượng", "Không thể phân tích định dạng JSON từ câu trả lời.");
+            }
+          } else {
+            showNotification("Không nhận được phản hồi hợp lệ từ AI.");
+          }
+
+        } catch (error) {
+          console.error("Gemini API Error:", error);
+          showNotification("Lỗi kết nối Gemini AI. Kiểm tra API key hoặc mạng!");
+        } finally {
+          isAnalyzing = false;
+          setScanUIState(false);
+        }
+      }
+
+      // Retry mechanism with Exponential Backoff
+      async function fetchWithRetry(url, options, retries = 3, backoff = 1000) {
+        try {
+          const res = await fetch(url, options);
+          if (!res.ok && res.status === 429 && retries > 0) {
+            await new Promise(r => setTimeout(r, backoff));
+            return fetchWithRetry(url, options, retries - 1, backoff * 2);
+          }
+          return res;
+        } catch (err) {
+          if (retries > 0) {
+            await new Promise(r => setTimeout(r, backoff));
+            return fetchWithRetry(url, options, retries - 1, backoff * 2);
+          }
+          throw err;
+        }
+      }
+
+      function setScanUIState(analyzing) {
+        if (analyzing) {
+          aiProcessingOverlay.classList.remove('opacity-0', 'pointer-events-none');
+          statusIndicator.textContent = "ĐANG PHÂN TÍCH AI...";
+          laserScanLine.classList.add('animate-pulse-fast');
+        } else {
+          aiProcessingOverlay.classList.add('opacity-0', 'pointer-events-none');
+          statusIndicator.textContent = isAutoMode ? "TỰ ĐỘNG QUÉT" : "SẴN SÀNG QUÉT";
+          laserScanLine.classList.remove('animate-pulse-fast');
+        }
+      }
+
+      function displayResult(data, base64Image) {
+        resTitle.textContent = data.title || "Vật thể không xác định";
+        resCategory.textContent = data.category || "Chung";
+        resConfidence.textContent = `${data.confidence || 90}% Nhận diện`;
+        resDescription.textContent = data.description || "Chưa có mô tả.";
+
+        // Populate detail list
+        resDetailsList.innerHTML = '';
+        if (data.details && Array.isArray(data.details)) {
+          data.details.forEach(item => {
+            const li = document.createElement('li');
+            li.textContent = item;
+            resDetailsList.appendChild(li);
+          });
+        }
+
+        // Show Bottom Sheet
+        resultBottomSheet.classList.remove('translate-y-full');
+
+        // Save to History
+        saveToHistory({
+          title: data.title,
+          category: data.category,
+          description: data.description,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          image: `data:image/jpeg;base64,${base64Image}`
+        });
+
+        // Setup search button
+        searchWebBtn.onclick = () => {
+          window.open(`https://www.google.com/search?q=${encodeURIComponent(data.title)}`, '_blank');
+        };
+
+        // Text To Speech
+        speakResultBtn.onclick = () => {
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const textToSpeak = `${data.title}. ${data.description}`;
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            utterance.lang = 'vi-VN';
+            window.speechSynthesis.speak(utterance);
+          } else {
+            showNotification("Trình duyệt không hỗ trợ đọc giọng nói!");
+          }
+        };
+      }
+
+      function displayFallbackResult(title, desc) {
+        displayResult({
+          title: title,
+          category: "Tổng quát",
+          confidence: 80,
+          description: desc,
+          details: ["Thử quét lại với góc chụp hoặc ánh sáng tốt hơn."]
+        }, captureVideoFrame() || '');
+      }
+
+      function saveToHistory(item) {
+        scanHistory.unshift(item);
+        if (scanHistory.length > 20) scanHistory.pop(); // Keep max 20 items
+        localStorage.setItem('vision_scan_history', JSON.stringify(scanHistory));
+        updateHistoryBadge();
+      }
+
+      function updateHistoryBadge() {
+        if (scanHistory.length > 0) {
+          historyBadge.textContent = scanHistory.length;
+          historyBadge.classList.remove('hidden');
+        } else {
+          historyBadge.classList.add('hidden');
+        }
+      }
+
+      function renderHistoryList() {
+        if (scanHistory.length === 0) {
+          historyListContainer.innerHTML = '<div class="text-center py-12 text-slate-500 text-sm">Chưa có lịch sử quét nào.</div>';
+          return;
+        }
+
+        historyListContainer.innerHTML = scanHistory.map((item, idx) => `
+          <div class="bg-slate-900/60 border border-white/5 rounded-2xl p-3 flex gap-3 items-center">
+            <img src="${item.image}" class="w-14 h-14 object-cover rounded-xl border border-white/10" alt="scan">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-indigo-400 font-semibold uppercase tracking-wider">${item.category}</span>
+                <span class="text-[10px] text-slate-500">${item.time}</span>
+              </div>
+              <h4 class="text-sm font-bold text-white truncate">${item.title}</h4>
+              <p class="text-xs text-slate-400 truncate">${item.description}</p>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // Manual Capture Button Click
+      scanTriggerBtn.addEventListener('click', () => {
+        analyzeFrame();
+      });
+
+      // Mode Switch: Manual vs Auto
+      modeManualBtn.addEventListener('click', () => {
+        isAutoMode = false;
+        clearInterval(autoScanTimer);
+        modeManualBtn.className = "px-4 py-1.5 rounded-full bg-brand-600 text-white transition-all shadow";
+        modeAutoBtn.className = "px-4 py-1.5 rounded-full text-slate-300 hover:text-white transition-all";
+        statusIndicator.textContent = "SẴN SÀNG QUÉT";
+      });
+
+      modeAutoBtn.addEventListener('click', () => {
+        isAutoMode = true;
+        modeAutoBtn.className = "px-4 py-1.5 rounded-full bg-brand-600 text-white transition-all shadow";
+        modeManualBtn.className = "px-4 py-1.5 rounded-full text-slate-300 hover:text-white transition-all";
+        statusIndicator.textContent = "TỰ ĐỘNG QUÉT";
+
+        // Immediate first scan then interval
+        analyzeFrame();
+        clearInterval(autoScanTimer);
+        autoScanTimer = setInterval(() => {
+          if (isAutoMode && !isAnalyzing) {
+            analyzeFrame();
+          }
+        }, autoIntervalMs);
+      });
+
+      // Bottom Sheet & Modals Handlers
+      closeResultBtn.addEventListener('click', () => {
+        resultBottomSheet.classList.add('translate-y-full');
+      });
+
+      // Settings Modal
+      settingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+      closeSettingsBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
+
+      toggleShowKey.addEventListener('click', () => {
+        const type = apiKeyInput.getAttribute('type') === 'password' ? 'text' : 'password';
+        apiKeyInput.setAttribute('type', type);
+      });
+
+      saveSettingsBtn.addEventListener('click', () => {
+        userApiKey = apiKeyInput.value.trim();
+        localStorage.setItem('gemini_api_key', userApiKey);
+        
+        autoIntervalMs = parseInt(autoScanIntervalSelect.value);
+        localStorage.setItem('auto_scan_interval', autoIntervalMs.toString());
+
+        settingsModal.classList.add('hidden');
+        showNotification("Đã lưu cấu hình thành công!");
+      });
+
+      // History Modal
+      historyModalBtn.addEventListener('click', () => {
+        renderHistoryList();
+        historyModal.classList.remove('hidden');
+      });
+      closeHistoryBtn.addEventListener('click', () => historyModal.classList.add('hidden'));
+
+      clearHistoryBtn.addEventListener('click', () => {
+        scanHistory = [];
+        localStorage.removeItem('vision_scan_history');
+        renderHistoryList();
+        updateHistoryBadge();
+      });
+
+      document.getElementById('tipsBtn').addEventListener('click', () => {
+        showNotification("Mẹo: Đặt vật thể vào chính giữa khung định vị để AI nhận diện tốt nhất.");
+      });
+
+      // Helper Toast Notification
+      function showNotification(msg) {
+        const toast = document.createElement('div');
+        toast.className = 'fixed top-16 left-1/2 transform -translate-x-1/2 z-50 glass-pill px-4 py-2 rounded-full text-xs text-white shadow-xl transition-all duration-300 border border-white/20 text-center max-w-[85vw]';
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+          toast.classList.add('opacity-0');
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
+      }
+
+    });
+  </script>
+</body>
+</html>
